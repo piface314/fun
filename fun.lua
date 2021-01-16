@@ -144,7 +144,21 @@ end
 --- Returns an array with the table keys.
 --- @return Fun
 function Fun:keys()
-  return self:map(strfn '_, k -> k')
+  local keys = new()
+  for k in pairs(self) do
+    keys[#keys + 1] = k
+  end
+  return keys
+end
+
+--- Returns an array with the table values.
+--- @return Fun
+function Fun:vals()
+  local vals = new()
+  for _, v in pairs(self) do
+    vals[#vals + 1] = v
+  end
+  return vals
 end
 
 --- Returns a string representation of the table as an array

@@ -113,14 +113,26 @@ function test.sort()
 end
 
 function test.keys()
-  local function t(a, k)
-    local keys = a:keys()
-    for i, v in ipairs(keys:sort()) do
-      assert(v == k[i])
+  local function t(a, tkeys)
+    local keys = a:keys():sort()
+    assert(keys[1], 'not array')
+    for i, k in ipairs(keys) do
+      assert(k == tkeys[i])
     end
   end
   t(fun {3, 1, 4, 1, 5, 9}, {1, 2, 3, 4, 5, 6})
   t(fun {a = true, b = true, c = true}, {'a', 'b', 'c'})
+end
+
+function test.vals()
+  local function t(a, tvals)
+    local vals = a:vals():sort()
+    assert(vals[1], 'not array')
+    for i, v in ipairs(vals) do
+      assert(v == tvals[i])
+    end
+  end
+  t(fun {a = 'ai', b = 'bo', c = 'ce'}, {'ai', 'bo', 'ce'})
 end
 
 function test.concat()
