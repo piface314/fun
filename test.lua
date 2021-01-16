@@ -135,6 +135,18 @@ function test.vals()
   t(fun {a = 'ai', b = 'bo', c = 'ce'}, {'ai', 'bo', 'ce'})
 end
 
+function test.hashmap()
+  local function t(a, fn)
+    local mapped = a:hashmap(fn)
+    for k, v in pairs(a) do
+      local nk, nv = fn(v, k)
+      assert(nv == mapped[nk], 'not mapped')
+    end
+    assert(a ~= mapped, 'same object')
+  end
+  t(fun {a = 5, b = 7, c = 0}, fun 'v, k -> v, k')
+end
+
 function test.concat()
   local a, b = fun {1, 2}, fun {3, 4}
   local c = a .. b
