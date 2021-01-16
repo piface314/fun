@@ -161,7 +161,7 @@ function Fun:vals()
   return vals
 end
 
---- Maps each value in the table with function `f` into a new table.
+--- Maps each value in the table with function `f` into a new hash.
 --- `f` receives each value as the first argument, and each key as the second.
 --- The first value returned by `f` is used as the key, and the second and the value
 --- @param f function
@@ -170,7 +170,9 @@ function Fun:hashmap(f)
   local hash = new()
   for k, v in pairs(self) do
     local nk, nv = f(v, k)
-    hash[nk] = nv
+    if nk ~= nil then
+      hash[nk] = nv
+    end
   end 
   return hash
 end
