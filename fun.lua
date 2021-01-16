@@ -1,4 +1,4 @@
---- Adds functional style support for tables
+--- Adds functional style support to tables
 --- @class Fun
 local Fun = {}
 Fun.__index = Fun
@@ -12,16 +12,23 @@ local function bind(t) return setmetatable(t, Fun) end
 --- @return Fun
 local function new() return bind({}) end
 
---- Parses a string into a function. If the generated function contains an error, that
---- error will be thrown.
+local FS_TEMPLATE = [[
+local __UP = {...}
+return function(%s) return %s end]]
+--- Parses a string into a one line function returning the given expression.
+--- Upvalues can be passed as additional parameters, and are referenced in
+--- the string with `$`. Like: `$1` means the first upvalue.
+--- If the generated function contains an error, that error will be thrown.
 --- @param s string
 --- @return function
-local function strfn(s)
-  local params, ret = s:match('%s*%(?(.-)%)?%s*%->%s*(.+)')
-  local fs = ('return function(%s) return %s end'):format(params, ret)
+local function strfn(s, ...)
+  local params, ret = s:match('^%s*%(?(.-)%)?%s*%->%s*(.+)$')
+  assert(params, 'fun: malformed function')
+  local exp = ret:gsub('$(%d+)', function(i) return '(__UP['..i..'])' end)
+  local fs = FS_TEMPLATE:format(params, exp)
   local f, err = load(fs)
-  assert(f, err)
-  return f()
+  assert(f, 'fun: ' .. (err or ''))
+  return f(...)
 end
 
 --- Returns a shallow copy of the table
@@ -32,7 +39,7 @@ function Fun:copy()
   return out
 end
 
---- Returns a deep copy of the table
+--- Returns a deep copy of the table. Internal metatables are preserved.
 --- @return Fun
 function Fun:deepcopy()
   local function copy(t)
@@ -99,14 +106,17 @@ function Fun:foreach(fn)
   end
 end
 
---- Inserts element `v` at the end of the table/array
+--- Inserts element `v` at the end of the table/array.
+--- Note that this operation mutates the table and returns itself.
 --- @param v any
+--- @return Fun
 function Fun:push(v)
   self[#self+1] = v
+  return self
 end
 
 --- Merges current table with any number of tables.
---- Latest tables take precedence
+--- Latest tables take precedence. Internal metatables are not preserved
 --- @return Fun
 function Fun:merge(...)
   local function merge(dst, src)
@@ -118,8 +128,9 @@ function Fun:merge(...)
         dst[k] = v
       end
     end
+    return dst
   end
-  return bind({self, ...}):reduce({}, merge)
+  return bind {self, ...}:reduce(bind {}, merge)
 end
 
 --- Sorts the table/array.
@@ -134,12 +145,6 @@ end
 --- @return Fun
 function Fun:keys()
   return self:map(strfn '_, k -> k')
-end
-
---- Returns a string representation of the table, inferring if it's an array or hash
---- @return string
-function Fun:__tostring()
-  return self[1] == nil and self:hash_tostring() or self:array_tostring()
 end
 
 --- Returns a string representation of the table as an array
@@ -157,8 +162,14 @@ function Fun:hash_tostring()
   local function str(v, k)
     return k .. ' = ' .. (type(v) == 'string' and '"' .. v .. '"' or tostring(v))
   end
-  local s = self:map(str):reduce('', strfn 'a,b -> a..", "..b'):sub(3, -2)
+  local s = self:map(str):reduce('', strfn 'a,b -> a..", "..b'):sub(3)
   return '{' .. s .. '}'
+end
+
+--- Returns a string representation of the table, inferring if it's an array or hash
+--- @return string
+function Fun:__tostring()
+  return self[1] == nil and self:hash_tostring() or self:array_tostring()
 end
 
 --- Concatenates two arrays into a new one (Values can be either plain tables or `Fun` objects).
@@ -180,9 +191,9 @@ end
 --- If `p` is a table, makes `p` an instance of `Fun`
 ---@param p string|table
 ---@return Fun
-return function(p)
+return function(p, ...)
   if type(p) == 'string' then
-    return strfn(p)
+    return strfn(p, ...)
   else
     return bind(p)
   end
