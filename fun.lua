@@ -1,7 +1,17 @@
 --- Adds functional style support to tables
 --- @class Fun
 local Fun = {}
-Fun.__index = Fun
+function Fun:__index(key)
+  local m = Fun[key]
+  return m or self(key)
+end
+
+--- Shortcut to rawget(self, key)
+--- @param key any
+--- @return any
+function Fun:__call(key)
+  return rawget(self, key)
+end
 
 --- Binds a table to a Fun object
 --- @param t table
@@ -11,6 +21,38 @@ local function bind(t) return setmetatable(t, Fun) end
 --- Returns an empty Fun
 --- @return Fun
 local function new() return bind({}) end
+
+--- Runs an iterator function until it returns `nil`, saving its return values.
+--- Acts like a `for` construction.
+--- @param iter function
+--- @param o any
+--- @param v any
+--- @return Fun
+local function gen(iter, o, v)
+  local out = new()
+  while true do
+    local vals = {iter(o, v)}
+    if vals[1] == nil then break end
+    v = vals[1]
+    out:push(#vals > 1 and vals or vals[1])
+  end
+  return out
+end
+
+--- Creates a list out of a numeric for range.
+---@param st number
+---@param en number
+---@param step? number
+---@return Fun
+local function range(st, en, step)
+  assert(type(en) == 'number', 'fun: range end must be a number')
+  if not step or type(step) ~= 'number' then step = 1 end
+  local out = new()
+  for i = st, en, step do
+    out[#out + 1] = i
+  end
+  return out
+end
 
 local FS_TEMPLATE = [[
 local __UP = {...}
@@ -57,12 +99,12 @@ end
 
 --- Maps each value in the table with function `f` into a new table.
 --- `f` receives each value as the first argument, and each index as the second.
---- @param f function
+--- @param f fun(val: any, key: any): any
 --- @return Fun
 function Fun:map(f)
   local out = new()
-  for i, v in pairs(self) do
-    out[i] = f(v, i)
+  for k, v in pairs(self) do
+    out[k] = f(v, k)
   end
   return out
 end
@@ -72,15 +114,15 @@ end
 --- If parameter `as_array` is provided, the table will be treated as an array if `true`,
 --- or treated as a hash if `false`. If not provided, the table will be inferred as an
 --- array if it contains an element at index `1`.
---- @param f function
+--- @param f fun(val: any, key: any): boolean
 --- @param as_array boolean
 --- @return Fun
 function Fun:filter(f, as_array)
   local out = new()
   if as_array == nil then as_array = self[1] ~= nil end
-  for i, v in pairs(self) do
-    if f(v, i) then
-      out[as_array and (#out + 1) or i] = v
+  for k, v in pairs(self) do
+    if f(v, k) then
+      out[as_array and #out + 1 or k] = v
     end
   end
   return out
@@ -88,9 +130,10 @@ end
 
 --- Reduces an table to a single value, according to a starting value `st`, and to a function `f`,
 --- that receives an accumulator value and the first parameter and the current value as the second
---- @param st any
---- @param f function
---- @return any
+--- @generic A
+--- @param st A
+--- @param f fun(acc: A, val: any): A
+--- @return A
 function Fun:reduce(st, f)
   for _, v in pairs(self) do
     st = f(st, v)
@@ -99,10 +142,10 @@ function Fun:reduce(st, f)
 end
 
 --- Executes function `fn` on each element of the table
---- @param fn function
+--- @param fn fun(val: any, key: any)
 function Fun:foreach(fn)
-  for i, v in pairs(self) do
-    fn(v, i)
+  for k, v in pairs(self) do
+    fn(v, k)
   end
 end
 
@@ -117,8 +160,9 @@ end
 
 --- Merges current table with any number of tables.
 --- Latest tables take precedence. Internal metatables are not preserved
+--- @vararg table
 --- @return Fun
-function Fun:merge(...)
+function Fun.merge(...)
   local function merge(dst, src)
     for k, v in pairs(src) do
       if type(v) == 'table' then
@@ -130,14 +174,15 @@ function Fun:merge(...)
     end
     return dst
   end
-  return bind {self, ...}:reduce(bind {}, merge)
+  return bind(bind {...}:reduce({}, merge))
 end
 
 --- Sorts the table/array.
+--- @param comp function
 --- @return Fun
-function Fun:sort()
+function Fun:sort(comp)
   local a = self:copy()
-  table.sort(a)
+  table.sort(a, comp)
   return a
 end
 
@@ -164,7 +209,7 @@ end
 --- Maps each value in the table with function `f` into a new hash.
 --- `f` receives each value as the first argument, and each key as the second.
 --- The first value returned by `f` is used as the key, and the second and the value
---- @param f function
+--- @param f fun(val: any, key: any): any, any
 --- @return Fun
 function Fun:hashmap(f)
   local hash = new()
@@ -173,7 +218,7 @@ function Fun:hashmap(f)
     if nk ~= nil then
       hash[nk] = nv
     end
-  end 
+  end
   return hash
 end
 
@@ -210,22 +255,29 @@ end
 function Fun.__concat(a, b)
   local a_t, b_t = type(a), type(b)
   assert(a_t == 'table' and a_t == b_t,
-         'attempt to concat a `Fun` value with a non-table value')
+         'fun: attempt to concat a `Fun` value with a non-table value')
   local t = {}
   for _, v in ipairs(a) do t[#t + 1] = v end
   for _, v in ipairs(b) do t[#t + 1] = v end
   return bind(t)
 end
 
---- If `p` is a string, parses that string into a function defined by that string.
---- If `p` is a table, makes `p` an instance of `Fun`
----@param p string|table
----@return Fun
-return function(p, ...)
-  if type(p) == 'string' then
-    return strfn(p, ...)
-  else
-    return bind(p)
-  end
-end
+local constructors = {
+  ['string'] = strfn,
+  ['function'] = gen,
+  ['table'] = bind,
+  ['number'] = range
+}
 
+--- If `v` is a string, parses that string into a function defined by that string.
+--- If `v` is a table, makes `v` an instance of `Fun`.
+--- If `v` is a function, that function is treated as a generator for values that are placed in an array.
+--- If `v` is a number, uses that number and its following argument to form a range of numbers.
+--- @param v string|table
+--- @return Fun
+return function(v, ...)
+  local t = type(v)
+  local cons = constructors[t]
+  assert(cons, ('fun: bad argument #1 (expected string|table|function|number, got %s)'):format(t))
+  return cons(v, ...)
+end

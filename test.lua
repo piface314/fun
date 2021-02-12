@@ -23,6 +23,16 @@ function test.strfn()
              string.byte)('a') == 'n', 'upvalues 2')
 end
 
+function test.gen()
+  local t = {3, 1, 4, 1, 5, 9}
+  assert(fun(ipairs(t))[3][2] == 4)
+end
+
+function test.range()
+  assert(fun(1, 5, 2)[2] == 3)
+  assert(fun(1, 5)[2] == 2)
+end
+
 function test.copy()
   local function t(a)
     local b = a:copy()
