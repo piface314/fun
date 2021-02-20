@@ -12,6 +12,8 @@ local Utils = require(BASE .. 'utils')
 local Fun = {}
 Fun.__index = Fun
 
+local loads = loadstring or load
+
 ---Checks if a value is an instance of Fun
 ---@param v any
 ---@return boolean
@@ -22,12 +24,9 @@ function Fun.is(v) return type(v) == 'table' and getmetatable(v) == Fun end
 ---@param t table table whose values are returned
 ---@return thread
 local function identity(t)
-  local id = coroutine.create(function(t)
-    coroutine.yield()
+  return coroutine.create(function()
     for k, v in pairs(t) do coroutine.yield(k, v) end
   end)
-  coroutine.resume(id, t)
-  return id
 end
 
 ---Creates a new Fun object by binding a table to it, optionally applying a transformation.
@@ -47,6 +46,76 @@ end
 ---@param copy? CopyMode if and how the table should be copied
 ---@return Fun
 function Fun.bind(t, copy) return bind(t, nil, copy) end
+
+---Parses a string into a one line function returning the given expression.
+---The string must use this format: `params -> expression`, e.g. `x, y -> x + y`.
+---A single "upvalue" can be passed an additional argument, and is referenced in
+---the string with `_`. If the generated function contains an error, it will be thrown.
+---@param s string defines the function
+---@param upval? any arbitrary value that can be accessed inside the new function
+---@return any
+function Fun.strfn(s, upval)
+  Assert.badarg(s, 1, 'Fun.strfn', 'string')
+  local params, ret = s:match('^%s*(.-)%s*%->%s*(.*)$')
+  assert(params, 'fun: malformed string function')
+  local template = 'local _ = (...) return function(%s) return %s end'
+  local fs = template:format(params, ret)
+  local f, err = loads(fs)
+  assert(f, 'fun: ' .. (err or ''))
+  return f(upval)
+end
+
+---Saves return values of a function on a Fun object, like a generic for construct.
+---@param f function function whose return values are stored
+---@param o any object used in iteration
+---@param v any starting value
+---@return Fun
+function Fun.gen(f, o, v)
+  Assert.badarg(f, 1, 'Fun.gen', 'function')
+  local gen = coroutine.create(function(f, o, v)
+    coroutine.yield()
+    local i = 0
+    while true do
+      local r = {f(o, v)}
+      if r[1] == nil then break end
+      i, v = i + 1, r[1]
+      coroutine.yield(i, #r > 1 and r or r[1])
+    end
+  end)
+  coroutine.resume(gen, f, o, st)
+  return setmetatable({bound = nil, trans = gen, cache = {}}, Fun)
+end
+
+---Creates a list of numbers in the range `[a,b]`, using `step` as the difference
+---between each consecutive term. `step` defaults to 1. If `b` is `nil`, the range
+---becomes infinite.
+---@param a number starting value
+---@param b? number ending value
+---@param step? number difference between consecutive terms
+function Fun.range(a, b, step)
+  Assert.badarg(a, 1, 'Fun.range', 'number')
+  Assert.badarg(b, 2, 'Fun.range', 'number|nil')
+  Assert.badarg(step, 3, 'Fun.range', 'number|nil')
+  local range = coroutine.create(function(a, b, step)
+    coroutine.yield()
+    local i, n = 1, a
+    if (b and b < a) or (step and step < 0) then
+      a, b, step = b, a, step or -1
+      while not a or a <= n do
+        coroutine.yield(i, n)
+        i, n = i + 1, n + step
+      end
+    else
+      step = step or 1
+      while not b or n <= b do
+        coroutine.yield(i, n)
+        i, n = i + 1, n + step
+      end
+    end
+  end)
+  coroutine.resume(range, a, b, step)
+  return setmetatable({bound = nil, trans = range, cache = {}}, Fun)
+end
 
 ---Computes the next element in the table, according to the applied transformation.
 ---If no more elements are left to be computed, returns `nil`.
