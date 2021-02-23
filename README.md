@@ -2,6 +2,8 @@
 
 It's fun(ctional?)!
 
+> NOTE: I just found out about [luafun](https://github.com/luafun/luafun), it does all this library was intended to do, and more. So this repository is now archived, as it is redundant.
+
 ## Example usage
 
 ```lua
